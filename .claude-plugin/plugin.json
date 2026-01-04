@@ -1,0 +1,9 @@
+{
+  "name": "curator",
+  "description": "Knowledge curation agent with memory retrieval for maintaining project research logs. Automatically surfaces past learnings based on current context.",
+  "version": "1.0.0",
+  "author": {
+    "name": "seshn"
+  },
+  "repository": "https://github.com/seshn/curator"
+}

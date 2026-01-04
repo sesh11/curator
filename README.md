@@ -1,293 +1,329 @@
-# Building a Knowledge Curation Agent in Claude Code
+# Claude Curator Plugin
+
+A knowledge curation agent for Claude Code with **memory retrieval** that surfaces past learnings based on current context.
+
+## Acknowledgments
+
+This plugin was inspired by [claude-diary](https://github.com/rlancemartin/claude-diary) by Lance Martin, which demonstrates long-term memory management through diary entries and reflection. The curator plugin adapts similar concepts for research curation with intent-based triggering and cross-referenced knowledge building.
 
 ## Overview
 
-The curator agent is a custom AI agent built on Claude Code's extensible agent framework, designed to solve a fundamental problem in AI-assisted research: **how to maintain coherent, searchable knowledge across evolving research projects without manual knowledge management overhead**.
+The Curator plugin helps you maintain organized, searchable research logs across your projects. Unlike simple note-taking, it builds a knowledge graph through cross-references and always consults past research before conducting new investigations.
+
+### Key Features
+
+- **Memory Retrieval**: Automatically surfaces relevant past research before new investigations
+- **Hooks**: Optional hooks for passive memory retrieval and session summaries
+- **Cross-Referencing**: Links related entries with `Related` and `Builds On` fields
+- **Structured Knowledge**: Maintains `research.md` with Active Research, Completed Research, Research Log, Ideas, and References
+- **Tag-Based Organization**: Consistent tagging for easy retrieval
+- **Gap Detection**: Identifies what's known vs what needs new research
 
 ## Architecture
 
-### Component Breakdown
-
-The system consists of three interconnected components:
-
-1. **Custom Agent Definition** (`~/.claude/agents/curator.md`)
-2. **Slash Command Interface** (`~/.claude/commands/curate.md`)
-3. **Structured Knowledge Base** (`research.md` per project)
-
-### 1. Custom Agent Definition
-
-Claude Code allows users to define custom agents using markdown files in `~/.claude/agents/`. Each agent definition uses YAML frontmatter:
-
-```yaml
----
-name: curator
-description: Knowledge curator for conducting web research, organizing findings chronologically with tags, and maintaining research.md files. Use proactively when users ask to research topics, find information, track references, or document ideas. MUST BE USED for any research-related tasks.
-tools: Read, Write, Edit, Grep, Glob, Bash, WebSearch, WebFetch
-model: sonnet
----
+```
+curator/
+├── .claude-plugin/
+│   └── plugin.json          # Plugin metadata
+├── agents/
+│   └── curator.md           # Curator agent with memory retrieval
+├── commands/
+│   └── curate.md            # /curate slash command
+├── hooks/
+│   ├── pre-compact.sh       # Session summary before compaction
+│   ├── memory-retrieval.py  # Intent-based memory retrieval
+│   └── settings.json        # Example hook configuration
+├── examples/
+│   └── sample-research.md   # Example research.md structure
+├── README.md
+├── INSTALL.md
+└── LICENSE
 ```
 
-**Key Components:**
-- **`name`**: Identifier used when invoking the agent
-- **`description`**: Injected into Claude's system prompt for automatic discovery
-- **`tools`**: Grants access to specific capabilities (file operations, web search, etc.)
-- **`model`**: Uses Claude Sonnet 4.5 for cost-efficiency
+## How It Works
 
-When Claude Code initializes, it automatically scans `~/.claude/agents/` and makes custom agents available.
-
-The body of `curator.md` contains the agent's operational instructions, defining a 6-step workflow:
+### Memory Retrieval Flow
 
 ```
-1. Initialize → 2. Understand Request → 3. Conduct Research →
-4. Organize & Tag → 5. Update research.md → 6. Provide Summary
+User: /curate agent coordination patterns
+
+                    ↓
+
+┌─────────────────────────────────────────────────────────┐
+│ 1. MEMORY RETRIEVAL (Always First)                      │
+│    - Extract concepts: [agent, coordination, patterns]  │
+│    - Search research.md by tags and keywords            │
+│    - Rank by: tag match > keyword > recency             │
+│    - Surface top 3-5 related entries                    │
+└─────────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────────┐
+│ 2. GAP IDENTIFICATION                                   │
+│    - What's already known from past research?           │
+│    - What knowledge gaps remain?                        │
+│    - Present to user for confirmation                   │
+└─────────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────────┐
+│ 3. FOCUSED RESEARCH                                     │
+│    - WebSearch targeting identified gaps                │
+│    - WebFetch for detailed extraction                   │
+│    - Synthesize with awareness of past findings         │
+└─────────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────────┐
+│ 4. CROSS-REFERENCED UPDATE                              │
+│    - Add new entry with Related links                   │
+│    - Include Builds On references                       │
+│    - Update past entries with forward links             │
+│    - Maintain tag index                                 │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### 2. Workflow & Invocation
+### Example Session
 
-The curator can be triggered in two ways:
+```
+User: /curate agent coordination patterns
 
-**Explicit Invocation:**
+Curator:
+I found related research in your knowledge base:
+
+1. **Context Engineering for Multi-Agent Systems** (2025-12-15) - Active Research
+   Key insight: Context passing can replace explicit coordination in some cases
+   Tags: #agent #context #architecture
+
+2. **Stateless Agent Design** (2025-12-10) - Completed Research
+   Key insight: Stateless agents with shared context eliminate coordination overhead
+   Tags: #agent #architecture #stateless
+
+Based on this, I'll focus new research on:
+- Explicit coordination mechanisms (not covered by past research)
+- Cases where context-passing isn't sufficient
+- Hybrid approaches
+
+[Conducts focused research...]
+
+Added to Active Research:
+- **Explicit Agent Coordination Mechanisms** (2026-01-02)
+- Related: Context Engineering, Stateless Agents
+- Builds On: Past work showed context-passing works for shared state;
+  this covers cases where explicit coordination is still needed
+```
+
+## Usage
+
+### Basic Commands
+
+When loaded via `--plugin-dir`, commands are namespaced as `/curator:curate`:
+
 ```bash
-/curate find me the top 5 articles on context engineering
+# Research a topic (with memory retrieval)
+/curator:curate agent coordination patterns
+
+# Show current research status
+/curator:curate
+
+# Quick note (auto-links to related research)
+/curator:curate note: context engineering eliminates coordination in some cases
+
+# Save a reference
+/curator:curate ref: https://example.com/paper - great overview of patterns
+
+# Capture an idea for later
+/curator:curate idea: explore graph-based knowledge representation
+
+# Update existing research
+/curator:curate update: mark context engineering as completed
+
+# Pure memory retrieval (no new research)
+/curator:curate recall: what do we know about stateless agents
+
+# Extend past research
+/curator:curate extend: stateless agents - what about hybrid approaches?
 ```
 
-**Implicit Invocation:**
-The agent description includes "MUST BE USED for any research-related tasks," which creates semantic triggers. When Claude detects research-related queries ("research X", "find information about Y", "track this reference"), it proactively invokes the curator without requiring the explicit `/curate` command.
+> **Note**: If installed globally to `~/.claude/plugins/`, the command may be available as just `/curate`.
 
-**Request Classification:**
+### Natural Language Triggers
 
-The agent classifies incoming requests to determine execution path:
-- **Quick Note**: Recording thoughts (`"note: ..."`)
-- **Deep Research**: Comprehensive investigation requiring web search
-- **Reference Addition**: Saving a link (`"ref: ..."`)
-- **Idea Capture**: Future research topics (`"idea: ..."`)
-- **Status Update**: Modifying existing research (`"update: ..."`)
+The curator activates automatically for:
+- "Research [topic]"
+- "Find information about [topic]"
+- "What's the latest on [topic]?"
+- "What do we know about [topic]?"
+- "Build on [past topic]"
+- "Document this idea"
 
-### 3. Slash Command Interface
+## research.md Structure
 
-The `/curate` command provides structured access via `~/.claude/commands/curate.md`:
-
-```markdown
----
-name: curate
-argument-hint: [topic or query]
-description: Curate knowledge and maintain research.md using the curator agent
----
-
-**Topic/Query**: $ARGUMENTS
-
-## Instructions for curator:
-
-1. If $ARGUMENTS is empty, show current research status from research.md
-2. If $ARGUMENTS is a topic/question, conduct thorough research
-3. If $ARGUMENTS starts with "note:", add as quick research log entry
-4. If $ARGUMENTS starts with "ref:", add as reference only
-5. If $ARGUMENTS starts with "idea:", add to Ideas & Future Research
-6. If $ARGUMENTS starts with "update:", update existing research entry
-```
-
-**The `$ARGUMENTS` Pattern:**
-
-When a user types `/curate [arguments]`, Claude Code expands the command and substitutes `$ARGUMENTS` with user input. This creates a **two-phase dispatch**:
-- Phase 1: Slash command expansion (substitutes variables)
-- Phase 2: Agent invocation (Claude executes based on expanded prompt)
-
-The prefix-based routing (`note:`, `ref:`, `idea:`, `update:`) allows for mode selection without complex parsing.
-
-### 4. The research.md Schema
-
-The knowledge base follows a strict schema with five top-level sections:
+Each project maintains a `research.md` with:
 
 ```markdown
 # Research Log
 
-> Project: [Auto-detected]
-> Started: [YYYY-MM-DD]
-> Last Updated: [YYYY-MM-DD]
+> Project: my-project
+> Started: 2025-12-01
+> Last Updated: 2026-01-02
 
 ## Active Research
-### [Topic Name]
-- **Status**: In Progress | Needs Validation | Blocked
-- **Started**: YYYY-MM-DD
-- **Tags**: #tag1 #tag2
-- **Question/Objective**: ...
-**Findings So Far**: ...
-**Next Steps**: ...
-**References**: ...
+[Ongoing investigations with status, findings, next steps]
 
 ## Completed Research
-[Same structure but with completion date and duration]
+[Archived research with conclusions and key insights]
 
 ## Research Log
-### YYYY-MM-DD HH:MM - [Title]
-**Tags**: #tag1 #tag2
-**Type**: Note | Research | Reference | Idea | Insight
-Content...
-**Sources**: [Title](URL)
+[Chronological record of all activities - newest first]
 
 ## Ideas & Future Research
-- **Idea**: Description [#tags]
-- **Question**: What about X? [#tags]
+[Parking lot for future exploration]
 
 ## References Library
-### By Category
-#### [Category Name]
-- [Source Title](URL) - Description
-
-### By Tag
-- **#tag1**: Entry 1, Entry 2, Entry 3
+[Categorized references with By Category and By Tag indices]
 ```
 
-**Design Rationale:**
-- **Separation of Concerns**: Active vs Completed separates current focus from historical context
-- **Dual Indexing**: Chronological (Research Log) and categorical (References Library) views
-- **Machine-Readable**: Structured format enables programmatic querying
-- **Human-Readable**: Markdown ensures git-friendliness and editor compatibility
+### Cross-Reference Fields
 
-## Technical Invocation Flow
+New in this version:
 
-**Complete end-to-end execution:**
-
-```
-User: /curate find me the top 5 articles on context engineering
-
-↓ [Claude Code expands slash command, substitutes $ARGUMENTS]
-
-Claude receives expanded prompt with topic inserted
-
-↓ [Claude analyzes and invokes Task tool]
-
-Task(
-  subagent_type="curator",
-  description="Research context engineering articles",
-  prompt="Research and find the top 5 articles..."
-)
-
-↓ [Curator agent executes 6-step workflow]
-
-Curator:
-1. WebSearch("context engineering LLMs 2025")
-2. WebFetch(top_results)
-3. Synthesize findings
-4. Read research.md
-5. Update research.md (add to Research Log, References, Active Research)
-6. Return summary
-
-↓ [Claude presents summary to user + updated research.md]
-```
-
-
-## Technical Innovations
-
-### 1. Stateless Agent with Persistent Context
-
-The curator is **stateless** (no session memory between invocations) but maintains **persistent context** via research.md. This demonstrates that stateless agents + proper context = powerful, composable primitives.
-
-**Benefits:**
-- **Composability**: Invoke from any project, any time
-- **Debuggability**: All state is explicit in research.md (git-trackable)
-- **Cost-Efficiency**: No session overhead; only pay for active research
-- **Cacheable**: Repeated queries can leverage prompt caching on research.md content
-
-### 2. Multi-Modal Tagging as Retrieval Index
-
-Instead of vector embeddings, the curator uses structured tags:
-
-```
-Universal Tags + Domain Tags + Technology Tags + Status Tags
-```
-
-This creates a **symbolic index** that's human-readable, git-diffable, and queryable with simple grep/search.
-
-### 3. Dual-Timeline Architecture
-
-Maintains two timelines:
-1. **Logical Timeline**: Active Research → Completed Research (task-oriented)
-2. **Chronological Timeline**: Research Log (time-oriented)
-
-Supports both "What am I working on now?" and "What did I learn yesterday?" without choosing one approach.
-
-## Limitations
-
-### 1. **No Automatic Summarization/Archiving**
-- research.md grows unbounded (current: 890 lines)
-- Agent suggests archiving at 1000+ lines but doesn't execute
-- Requires user decision on what to archive
-
-### 2. **Limited Cross-Project Intelligence**
-- Each project has isolated research.md
-- No global view across all research
-- Intentional design choice (keeps context focused)
-
-### 3. **Tag Fragmentation**
-- No automated tag consolidation (#ml vs #machine-learning vs #ML)
-- Current mitigation: Agent guidelines to use established tags
-
-### 4. **Flat Structure vs Graph-Based Needs**
-- Current: Markdown with tags (flat hierarchy)
-- Reality: Research has complex relationships (contradicts, supports, extends, relates_to)
-- **Need**: Knowledge graph backend with research.md as rendered view
-  - Nodes: Concepts, Articles, Insights, Hypotheses
-  - Edges: Semantic relationships
-  - Benefits: Traversal queries, contradiction detection, concept evolution tracking
-
-### 5. **Single-Threaded Research**
-- Can only research one topic at a time
-- "Research X, Y, and Z" becomes sequential
-
-### 6. **No Quality Scoring**
-- All sources treated equally
-- Blog post has same weight as peer-reviewed paper
-- Current: Manual filtering via source hierarchy
-
-## Future Improvements
-
-### Context Assembly Pipeline
-
-Current: Single-phase research (WebSearch → synthesize)
-
-Proposed:
-```
-1. Query Decomposition: Break into subqueries
-2. Parallel Retrieval: Search multiple sources concurrently
-3. Relevance Ranking: Score by credibility + recency + relevance
-4. Synthesis: Merge results, identify contradictions
-5. Structured Output: Generate update with confidence scores
-```
-
-### Automatic Hypothesis Testing
-
-Current: Curator logs hypotheses but doesn't test them
-
-Proposed:
 ```markdown
-## Ideas & Future Research
-- **Hypothesis**: Stateless agents + context = interoperability primitive
-  - **Status**: Testable
-  - **Test Plan**: Build workflow with stateful (OpenAI) vs stateless (Anthropic)
-  - **Metrics**: Code complexity, cost, latency
-  - **Trigger**: /curate test-hypothesis "stateless agents"
+### 2026-01-02 10:30 - Agent Coordination Patterns
+**Tags**: #agent #coordination #patterns
+**Type**: Research
+**Related**: [Context Engineering](#2025-12-15), [Stateless Agents](#2025-12-10)
+**Builds On**: Previous research on context-passing; extends to explicit coordination cases
+
+[Content...]
 ```
 
-Curator could generate test plans, execute experiments, log results automatically.
+## Hooks (Optional)
 
-### Knowledge Graph Backend
+The plugin includes two hooks for **automatic memory retrieval** without explicit commands:
 
-Transform flat markdown into graph structure:
+### PreCompact Hook
+
+**Trigger**: Before conversation compaction (200+ messages or manual `/compact`)
+
+**Behavior**: Prompts Claude to add a session summary to research.md, preserving:
+- Topics researched this session
+- Key insights discovered
+- References added
+- Open questions to continue next session
+
+### UserPromptSubmit Hook
+
+**Trigger**: Only prompts with **curation intent** (not every prompt)
+
+**Intent patterns that trigger the hook**:
+
+| Category | Patterns |
+|----------|----------|
+| **Research** | "research X", "find information about", "look up", "what's the latest", "curate", "what do we know" |
+| **Ideas** | "idea:", "brainstorm", "I'm thinking about", "what if we", "document this idea" |
+| **References** | "save this", "ref:", any URL, "add this to research", "track this" |
+| **Updates** | "update:", "note:", "mark completed", "update research" |
+
+**Non-triggers** (examples):
+- "Fix the bug in main.py" - coding task
+- "Run the tests" - command
+- "What does this function do?" - code question
+
+**Behavior when triggered**:
+1. Extracts keywords from your prompt
+2. Searches research.md for matching entries (by tags and content)
+3. Injects top 3 matches as context: `[Curator] Related past research found: ...`
+
+### Example
 
 ```
-research.md (user-facing) ← rendered from → knowledge graph (backend)
+You: "Research agent coordination patterns"
 
-Nodes: Concepts, Articles, Insights, Hypotheses
-Edges: "relates_to", "contradicts", "supports", "extends"
+[Hook detects "research" intent, searches research.md, finds matches]
 
-Benefits:
-- Query: "Show all concepts related to context engineering"
-- Traverse: "What led to the stateless agents hypothesis?"
-- Detect: "Are there contradictions in my research?"
+Claude sees: "[Curator] Related past research found: Agent Coordination Patterns,
+Context Engineering for Multi-Agent Systems, Stateless Agent Design"
+
+Claude: "Based on your past research on agent coordination..."
 ```
 
-Implementation: Embed graph in research.md as YAML frontmatter, render as markdown for readability.
+```
+You: "Fix the authentication bug"
+
+[Hook detects NO curation intent, exits silently]
+
+Claude: Proceeds with bug fix without curator context
+```
+
+See [INSTALL.md](INSTALL.md) for hook installation instructions.
 
 ---
 
+## Technical Details
+
+### Memory Retrieval Algorithm
+
+1. **Concept Extraction**: Parse query into key terms and related concepts
+2. **Tag Search**: Grep for exact and related tag matches
+3. **Keyword Search**: Search titles and content
+4. **Relevance Ranking**:
+   - Exact tag match: highest weight
+   - Related tag match: high weight
+   - Keyword in title: medium weight
+   - Keyword in content: lower weight
+   - Recency bonus for fast-moving topics
+5. **Threshold**: Surface entries with relevance score above threshold
+
+### Tag Taxonomy
+
+**Universal**: `#research`, `#reference`, `#idea`, `#insight`, `#note`
+
+**Domain**: `#architecture`, `#security`, `#performance`, `#api`, `#ml`, `#agents`, `#context`, `#devops`, `#testing`, `#ux`
+
+**Technology**: `#python`, `#typescript`, `#claude`, etc.
+
+**Status**: `#active`, `#completed`, `#blocked`, `#validated`
+
+## Comparison: Before vs After
+
+| Aspect | Before (Basic Curator) | After (With Memory Retrieval) |
+|--------|------------------------|------------------------------|
+| **Research Start** | Fresh search every time | Search past research first |
+| **Knowledge Building** | Isolated entries | Cross-referenced graph |
+| **Duplicate Prevention** | Manual | Automatic gap detection |
+| **Context Awareness** | None | Surfaces relevant past work |
+| **Entry Structure** | Basic | Related + Builds On fields |
+
+## Installation
+
+See [INSTALL.md](INSTALL.md) for detailed installation instructions.
+
+### Quick Start (Local Testing)
+
+```bash
+claude --plugin-dir /path/to/curator
+```
+
+### Global Installation
+
+```bash
+cd ~/.claude/plugins
+git clone https://github.com/sesh11/curator
+```
+
+## Limitations
+
+- **Single Project Scope**: research.md is per-project by design
+- **Tag Fragmentation**: No automatic consolidation of similar tags (#ml vs #machine-learning)
+- **Flat Structure**: Markdown-based, not a true knowledge graph
+- **Manual Archiving**: Large files require manual archive decision
+
+## Future Improvements
+
+- **Cross-Project Memory**: Optional global research index
+- **Tag Normalization**: Automatic consolidation of similar tags
+- **Confidence Scoring**: Weight sources by credibility
+- **Contradiction Detection**: Flag conflicting findings
+- **Knowledge Graph Backend**: Graph structure rendered as markdown
+
+## License
+
+MIT
